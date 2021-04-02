@@ -1,0 +1,301 @@
+---
+title: "Analizando texto  con Text Mining"
+subtitle: " Letra *El Bómbon*. Los Palmeras"
+output:
+  html_document:
+    df_print: paged
+  xaringan::moon_reader:
+    seal: no
+    css:
+    - default
+    - shinobi
+    - tamu-fonts
+    nature:
+      ratio: '16:9'
+      highlightStyle: github
+      highlightLines: yes
+    language: spanish
+---
+
+
+
+
+```````{r include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message=FALSE, warning=FALSE)
+
+```
+
+-------------------------
+
+El presente análisis se realizó gracias a la capacitación  en el [Club de R para RRHH](https://r4hr.club).  
+
+Qué es el Club? Es una comunidad de aprendizaje de programación en R destinada para las personas que trabajan en Recursos Humanos de habla hispana.
+
+Nosotras, [Yanel Paulette](https://www.linkedin.com/in/yanelpaulette/) y [Daniela Garcia ](https://www.linkedin.com/in/claudiadanielagarcia/) pertenecemos al club. 
+
+-------------------------
+
+
+\newpage
+
+<img src="https://media.giphy.com/media/l0IyjiXOXTX6Yemsg/giphy.gif" />
+
+---
+### Objetivo
+
+Vamos a analizar un texto, a través de un paquete de R llamado *Text Mining*.
+
+En RRHH analizar texto resulta fundamental,  lo podriamos utilizar en entrevistas,  evaluaciones, encuestas, comunicación corporativa (...).  
+
+*¿ Se te ocurre algún otro uso? Contanos en comentarios. *
+
+### Datos
+
+Los datos que vamos a usar son de una canción muy popular en Argentina.  (NO SE COMO AGREGAR ESPACIO)
+¿Por qué una canción?  
+La idea es demostrar  los resultados del uso de dicha herramienta y que sea visible para el lector.
+
+La pieza musical en cuestión es **"El Bómbon"**, cuyos autores son **"Los Palmeras"**.[^1] 
+
+[^1]: No es nuestro objetivo entrar en debate respecto del significado de la letra, su interpretación, ni tampoco realizar una critica artistica. Solo queremos usar los datos, y que sean facilmente visibles al lector.
+
+
+
+```{r }
+library(googlesheets4)
+library(tidyverse)
+library(gargle)
+library(tidytext)
+library(wordcloud2)
+library(tm)
+library(funModeling)
+library(scales)
+library(xaringan)
+# Estilos para los gráficos
+zy <- theme(panel.background = element_blank(),
+            panel.grid.major.y = element_line(colour = "#F4F6F6"),
+            axis.line = element_line(colour = "grey"))
+
+zx <- theme(panel.background = element_blank(),
+            panel.grid.major.x = element_line(colour = "#F4F6F6"),
+            axis.line = element_line(colour = "grey"))
+
+letraPalmeras <- sheets_read("1FuU9kcPxJA37PGomv5zZzFrzchibEe-WDJ36Ty9vhHg")
+
+
+```
+Para trabajar con la letra, realizamos una serie de procesos, los cuales nos permiten acceder a una base de datos,  compuesta por los siguientes datos:
+
+```{r include=FALSE}
+dim(letraPalmeras)
+head(letraPalmeras)
+```
+
+Tenemos un  archivo  inicial para trabajar compuesto por   `r ncol(letraPalmeras)` columna y `r nrow(letraPalmeras)` filas.  
+
+```{r include=FALSE}
+letraPalmeras<-letraPalmeras %>% 
+  unnest_tokens(palabra, Comentarios)
+
+dim(letraPalmeras)
+
+letraPalmeras
+```
+
+Como sabemos,  hay palabras que encontramos en los discursos que no sirven para un análisis, por ejemplo *"y"*, *"o"*, *"lo"*... 
+Todas estas palabras las eliminamos de nuestras bases. 
+
+```{r include=FALSE}
+vacias <- read_csv("https://raw.githubusercontent.com/7PartidasDigital/AnaText/master/datos/diccionarios/vacias.txt",
+                   locale = default_locale())
+
+```
+
+```{r}
+
+letraPalmeras_vacio <- letraPalmeras %>%
+  anti_join(vacias)
+
+```
+
+
+### Visualizar la Frecuencia de las Palabras
+
+Nos interesa ver la frecuencia en la que aparecen las palabras en la canción.
+
+Lo podemos visualizar en el siguiente grafico: (NO SALE EL GRAFICO GRR)
+
+
+```{r sent, message=FALSE, warning=FALSE, fig.show='hide'}
+
+letraPalmeras_vacio %>% 
+  count(palabra, sorte=TRUE)
+
+
+letraPalmeras_vacio %>%
+  count(palabra, sort = TRUE) %>%
+  filter(n>1) %>%
+  ggplot(aes(x= reorder(palabra, n), y = n, fill = n))+
+  geom_bar(stat = 'identity') + 
+  scale_fill_gradient(low = "#D6DBDF", high = "#34495E")+
+  zx+
+  labs(title= "El Bombón",
+       subtitle = "Autor: Los Palmeras",
+       x="", y="Cantidad de apariciones") +
+  coord_flip()
+
+
+```
+
+```{r ref.label="freq", echo=FALSE, message=FALSE, warning=FALSE}
+```
+
+### Análisis de Sentimientos
+
+Ahora quisieramos saber la relación que hay entre las palabras de la canción y los sentimientos. 
+
+Por ejemplo: Si en una encuesta de clima tenemos palabras o frases  como *"Conforme"*, *"Recomendaría"*, *"Me encanta"*, podemos relacionarlo con un sentimiento **Positivo**. 
+En cambio si aparece  *"Injusto"*, *"Desagradable"*, *"Angustia"*, podemos relacionarlo con uno **Negativo**. 
+
+En el análisis de sentimientos, hacemos el mismo procedimiento pero con un número mayor de categorías, como vemos a continuación. 
+
+```{r}
+sentimientos <- read_tsv("https://raw.githubusercontent.com/7PartidasDigital/AnaText/master/datos/diccionarios/sentimientos_2.txt",
+                         col_types = "cccn",
+                         locale = default_locale())
+
+
+
+```
+
+```{r}
+source("https://raw.githubusercontent.com/7PartidasDigital/R-LINHD-18/master/get_sentiments.R")
+
+```
+
+
+```{r}
+
+library(textdata)
+
+letraPalmeras_nrc <- letraPalmeras_vacio %>%
+  right_join(get_sentiments("nrc")) %>%
+  filter(!is.na(sentimiento)) %>%
+  count(sentimiento, sort = TRUE)
+```
+
+Podemos observar los sentimientos presentados. 
+Hay una predominancia de sentimientos negativos en comparación de los positivos. 
+
+Los sentimientos de alegria `r letraPalmeras$alegría`  representan un % respecto a los de `r letraPalmeras$miedo`.   (VER para que salga esto)
+
+```{r}
+library(gt)
+gt(letraPalmeras_nrc)
+
+```
+
+
+```{r}
+feelings <- c("negativo", "positivo", "negativo", "negativo", "negativo", "positivo", "positivo", "positivo")
+
+
+```
+La representacion grafica seria la siguiente:
+
+
+```{r}
+letraPalmeras_nrc %>%
+  filter(sentimiento != "negativo", sentimiento !="positivo") %>%
+  cbind(feelings) %>% #el vector creado
+  ggplot(aes(reorder(sentimiento, n), n, fill = feelings)) +
+  geom_bar(stat = "identity", show.legend = FALSE) +
+  scale_fill_manual(values = c("#F5B041","#5DADE2"))+
+  zx + #Estilo grafico
+  coord_flip() +
+  labs(title="Ranking de sentimientos",
+       x = "Sentimiento",
+       y = "Cantidad de Apariciones")
+```
+
+Una de las cosas que se puede presentar en el análisis, es que un sentimiento tenga una predominancia mayor o menor  que otra.  
+
+¿Para qué podria servirnos?
+
+Para tenerlo en consideracion en el armado  de nuestras piezas de comunicacion  y usar esta informacion para reforzar conceptos, o suspender/eliminar aquellos que no estan ayudando. 
+
+A continuación , podemos observar las palabras relacionadas con *"Confianza"*. 
+
+```{r}
+letraPalmeras_vacio %>%
+  right_join(get_sentiments("nrc")) %>%
+  filter(!is.na(sentimiento)) %>%
+  group_by(sentimiento) %>%
+  count(palabra, sort = TRUE) %>%
+  filter(sentimiento == "confianza") %>% top_n(5)# solo podemos consultar los primeros 5
+
+
+```
+Asimismo podemos observar la frecuencia en las palabras relacionadas con la palabra  *"Miedo"*.
+
+```{r}
+letraPalmeras_vacio %>%
+  right_join(get_sentiments("nrc")) %>%
+  filter(!is.na(sentimiento)) %>%
+  group_by(sentimiento) %>%
+  count(palabra, sort = TRUE) %>%
+  filter(sentimiento == "miedo") 
+```
+
+
+En conclusión, el análisis de las palabras por si solo, no nos dice nada, si no lo relacionamos con una accion concreta.  
+Pero, como ustedes saben,  esta es la base del análisis de datos. 
+
+-------------------------
+
+### Nube de Palabras
+
+Por último,  con la presente pieza musical  podemos armar  una nube de palabras.
+
+¿Para qué usar una nube? ~~Porque queda divino~~
+Más allá de lo estético, las nubes de palabras nos sirven visualmente para observar aquellas palabras/categorías con mayor/menor presencia en el discurso analizado.  
+
+
+Por ejemplo:  La empresa quiere cambiar su politica de beneficios. 
+Para ello hace una consulta a su gente sobre qué beneficios valorarían más.
+Y luego  utiliza la nube de palabras para demostrar que la empresa accedió a otorgar aquellos beneficios con mayor cantidad de votos.  
+
+
+
+_¿ Se te ocurren otros casos de uso? Contanos en comentarios._
+
+Volviendo a nuestra canción,  podemos observar que *"Bombón"* es la que más veces aparece. En menor medida, pero con una frecuencia alta aparece  *"Menea"* y *"Sabe"* y *"Mueve"*.
+
+```{r}
+letraPalmeras_vacio %>% 
+  count(palabra,sort = TRUE) %>% 
+  ungroup() %>% 
+  wordcloud2(size = 0.6, shape = "cardioid")
+```
+
+
+Llegamos al final. Gracias por estar ahi.👏
+
+Sabemos que la próxima vez que escuchen el tema, recordarán esta lectura. 🤗
+
+
+
+[Yanel](https://www.linkedin.com/in/yanelpaulette/) y [Dani](https://www.linkedin.com/in/claudiadanielagarcia/) 
+
+
+#### Fuentes
+
+[Club de R para RRHH](https://data-4hr.com/2020/04/29/club-de-r/) Club de R
+
+[Cuentapalabras](http://www.aic.uva.es/cuentapalabras/) 7 Partidas Digital
+
+[Text Mining with R](https://www.tidytextmining.com/) de Julia Silge and David Robinson
+
+[Wordcloud2](https://cran.r-project.org/web/packages/wordcloud2/vignettes/wordcloud.html)
+
+
